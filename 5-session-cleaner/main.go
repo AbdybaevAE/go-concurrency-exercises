@@ -20,17 +20,22 @@ package main
 import (
 	"errors"
 	"log"
+	"sync"
+	"time"
 )
 
 // SessionManager keeps track of all sessions from creation, updating
 // to destroying.
 type SessionManager struct {
 	sessions map[string]Session
+	m        sync.Mutex
 }
 
 // Session stores the session's data
 type Session struct {
-	Data map[string]interface{}
+	Data      map[string]interface{}
+	updatedAt time.Time
+	m         sync.Mutex
 }
 
 // NewSessionManager creates a new sessionManager
@@ -50,7 +55,8 @@ func (m *SessionManager) CreateSession() (string, error) {
 	}
 
 	m.sessions[sessionID] = Session{
-		Data: make(map[string]interface{}),
+		Data:      make(map[string]interface{}),
+		updatedAt: time.Now(),
 	}
 
 	return sessionID, nil
@@ -67,6 +73,10 @@ func (m *SessionManager) GetSessionData(sessionID string) (map[string]interface{
 	if !ok {
 		return nil, ErrSessionNotFound
 	}
+	if time.Since(session.updatedAt) > time.Second*5 {
+		delete(m.sessions, sessionID)
+		return nil, ErrSessionNotFound
+	}
 	return session.Data, nil
 }
 
@@ -76,10 +86,13 @@ func (m *SessionManager) UpdateSessionData(sessionID string, data map[string]int
 	if !ok {
 		return ErrSessionNotFound
 	}
-
+	m.m.Lock()
+	defer m.m.Unlock()
 	// Hint: you should renew expiry of the session here
+
 	m.sessions[sessionID] = Session{
-		Data: data,
+		Data:      data,
+		updatedAt: time.Now(),
 	}
 
 	return nil
@@ -113,4 +126,5 @@ func main() {
 	}
 
 	log.Println("Get session data:", updatedData)
+
 }
